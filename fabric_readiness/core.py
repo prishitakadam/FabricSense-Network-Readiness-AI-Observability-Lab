@@ -80,6 +80,14 @@ def evaluate(
         baseline,
         f">= {policy['minimum_baseline_mbps']} Mbps",
     )
+    degraded = float(evidence["degraded_throughput_mbps"])
+    degraded_ratio = degraded / baseline if baseline > 0 else 0.0
+    add(
+        "degraded_throughput",
+        degraded_ratio >= policy["minimum_degraded_ratio"],
+        round(degraded_ratio, 4),
+        f">= {policy['minimum_degraded_ratio']} of baseline",
+    )
     add("link_restoration", evidence["restored"], evidence["restored"], "true")
 
     recovery_seconds = float(evidence["recovery_seconds"])

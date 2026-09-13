@@ -60,6 +60,7 @@ class PrometheusParsingTests(unittest.TestCase):
 class ReadinessEvaluationTests(unittest.TestCase):
     policy = {
         "minimum_baseline_mbps": 100.0,
+        "minimum_degraded_ratio": 0.7,
         "minimum_recovered_ratio": 0.9,
         "maximum_recovery_seconds": 30.0,
         "maximum_error_delta": 0.0,
@@ -72,6 +73,7 @@ class ReadinessEvaluationTests(unittest.TestCase):
             "fault_observed": True,
             "restored": True,
             "baseline_throughput_mbps": 800.0,
+            "degraded_throughput_mbps": 600.0,
             "recovered_throughput_mbps": 760.0,
             "recovery_seconds": 8.0,
             "error_delta": 0.0,
@@ -92,6 +94,18 @@ class ReadinessEvaluationTests(unittest.TestCase):
         self.assertEqual(result, "FAIL")
         self.assertIn(
             "recovery_time",
+            [check["name"] for check in checks if check["status"] == "FAIL"],
+        )
+
+    def test_returns_fail_when_degraded_path_lacks_capacity(self):
+        evidence = self.healthy_evidence()
+        evidence["degraded_throughput_mbps"] = 400.0
+
+        result, checks = evaluate(evidence, self.policy)
+
+        self.assertEqual(result, "FAIL")
+        self.assertIn(
+            "degraded_throughput",
             [check["name"] for check in checks if check["status"] == "FAIL"],
         )
 
