@@ -5,10 +5,10 @@ fabric. One command deploys the network and observability stack, measures a
 healthy baseline, disables a leaf-spine link, measures degraded performance,
 restores the link, and produces an evidence-based readiness result.
 
-## Run Phase 1 in GitHub Codespaces
+## Run the lab in GitHub Codespaces
 
 1. Open this repository on GitHub and select **Code → Codespaces → Create
-   codespace on main**. Choose a machine with at least 4 cores and 16 GB RAM.
+   codespace**. Choose a machine with at least 4 cores and 16 GB RAM.
 2. Wait for the development container to finish starting.
 3. Run:
 
@@ -29,7 +29,7 @@ JSON evidence: artifacts/<experiment-id>/results.json
 
 Exit codes are `0` for PASS, `1` for FAIL, and `2` for INCONCLUSIVE.
 
-## Phase 1 architecture
+## Architecture
 
 ```text
 client2 ─ leaf2 ─┬─ spine1 ─┬─ leaf1 ─ client1
@@ -42,8 +42,32 @@ SR Linux ──gNMI──> gNMIc ──scrape──> Prometheus ──> Grafana
 ```
 
 The complete topology contains three leaves, two spines, and three Linux
-clients. The Phase 1 experiment uses `client2 → client1` and disables
-`leaf1/ethernet-1/49`, leaving the path through `spine2` available.
+clients. The automated experiment uses `client2 → client1` and disables
+`leaf1/ethernet-1/49`, leaving the alternate path through `spine2` available.
+
+## Open-source foundation and additions
+
+This project extends Nokia's open-source
+[SR Linux Telemetry Lab](https://github.com/srl-labs/srl-telemetry-lab). The
+original lab provides the Containerlab-based SR Linux leaf-spine fabric, gNMIc
+telemetry collection, Prometheus scraping, Grafana visualization, and topology
+assets.
+
+This repository keeps that observability foundation and adds a repeatable
+readiness experiment around it:
+
+- Python automation for fabric health validation, traffic benchmarking,
+  controlled gNMI link failure, recovery measurement, and cleanup.
+- Explicit PASS/FAIL/INCONCLUSIVE readiness rules backed by telemetry and
+  benchmark evidence.
+- Markdown and JSON report generation for human review and machine-readable
+  evidence.
+- Codespaces/devcontainer setup and tests so the lab can be reproduced and
+  validated consistently.
+
+The goal is to turn a telemetry demo into a resilience validation workflow:
+deploy the fabric, observe it, inject a realistic link failure, measure the
+impact, confirm recovery, and produce evidence that the network is ready.
 
 ## What the experiment checks
 
@@ -93,7 +117,7 @@ the fabric.
 
 ```bash
 make deploy      # deploy or recreate the lab
-make experiment  # deploy and run the complete Phase 1 experiment
+make experiment  # deploy and run the complete readiness experiment
 make test        # run tests without deploying the lab
 make destroy     # remove all lab containers and generated lab files
 ```
@@ -108,12 +132,6 @@ st.clab.yml          Containerlab topology
 readiness.toml        scenario values and explicit readiness thresholds
 artifacts/            generated experiment evidence (Git-ignored)
 ```
-
-## Scope
-
-Phase 1 contains one TCP throughput and link-failure scenario. Loki, centralized
-logs, alerts, latency, packet loss, congestion, telemetry-outage scenarios, and
-incident timelines are reserved for Phase 2.
 
 ## Attribution
 
