@@ -1,0 +1,16 @@
+[experiment]
+source_container = "client2"
+destination_address = "172.17.0.1"
+fault_node = "leaf1"
+fault_interface = "ethernet-1/49"
+prometheus_url = "http://localhost:9090"
+baseline_seconds = 15
+recovery_seconds = 15
+parallel_streams = 8
+
+[readiness]
+minimum_baseline_mbps = 100.0
+minimum_recovered_ratio = 0.90
+maximum_recovery_seconds = 30.0
+maximum_telemetry_age_seconds = 15.0
+maximum_error_delta = 0.0
