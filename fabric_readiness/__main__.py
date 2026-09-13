@@ -31,6 +31,7 @@ def main(argv: list[str] | None = None) -> int:
         policy,
         node=experiment_config["fault_node"],
         interface=experiment_config["fault_interface"],
+        timing=experiment_config,
     ).run()
     report_dir = args.output / result["experiment_id"]
     markdown_path, json_path = write_reports(result, report_dir)

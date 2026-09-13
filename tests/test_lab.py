@@ -20,9 +20,11 @@ class LabConfigurationTests(unittest.TestCase):
 
     def test_grafana_uses_only_prometheus_in_phase1(self):
         datasource = (ROOT / "configs/grafana/datasource.yml").read_text()
+        dashboard = (ROOT / "configs/grafana/dashboards/telemetry-dashboard.json").read_text()
 
         self.assertIn("url: http://prometheus:9090", datasource)
         self.assertNotIn("type: loki", datasource)
+        self.assertNotIn('"type": "loki"', dashboard)
 
     def test_one_command_workflow_is_available(self):
         makefile = (ROOT / "Makefile").read_text()

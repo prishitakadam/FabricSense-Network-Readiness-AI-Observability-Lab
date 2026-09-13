@@ -10,7 +10,7 @@ from typing import Any
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
-from .core import evaluate, parse_iperf, parse_prometheus_value
+from .core import analyze_fault_intervals, evaluate, parse_iperf, parse_prometheus_value
 
 
 REQUIRED_CONTAINERS = (
@@ -29,6 +29,7 @@ class LabOperations:
     def __init__(self, config: dict[str, Any], maximum_telemetry_age: float):
         self.config = config
         self.maximum_telemetry_age = maximum_telemetry_age
+        self.evidence: dict[str, Any] = {"prometheus_queries": [], "gnmi_operations": []}
 
     def _run(self, command: list[str], timeout: int = 60) -> str:
         completed = subprocess.run(
@@ -43,7 +44,12 @@ class LabOperations:
     def _query(self, expression: str) -> float:
         query = urlencode({"query": expression})
         with urlopen(f"{self.config['prometheus_url']}/api/v1/query?{query}", timeout=10) as response:
-            return parse_prometheus_value(json.load(response))
+            payload = json.load(response)
+        value = parse_prometheus_value(payload)
+        self.evidence["prometheus_queries"].append(
+            {"timestamp": timestamp(), "expression": expression, "value": value, "raw": payload}
+        )
+        return value
 
     def _selector(self) -> str:
         short_interface = self.config["fault_interface"].replace("ethernet-", "e").replace("/", "-")
@@ -95,6 +101,31 @@ class LabOperations:
         )
         return parse_iperf(output)
 
+    def start_fault_benchmark(self, seconds: int) -> subprocess.Popen[str]:
+        return subprocess.Popen(
+            [
+                "docker", "exec", self.config["source_container"], "iperf3",
+                "-c", self.config["destination_address"],
+                "-P", str(self.config["parallel_streams"]),
+                "-t", str(seconds), "-i", "1", "--json",
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+
+    def finish_fault_benchmark(self, process: subprocess.Popen[str]) -> dict[str, Any]:
+        seconds = int(self.config.get("fault_traffic_seconds", self.config["benchmark_seconds"]))
+        try:
+            stdout, stderr = process.communicate(timeout=seconds + 30)
+        except subprocess.TimeoutExpired:
+            process.terminate()
+            stdout, stderr = process.communicate(timeout=5)
+            raise RuntimeError("iperf3 fault benchmark timed out")
+        if process.returncode:
+            raise RuntimeError(stderr.strip() or f"iperf3 exited with {process.returncode}")
+        return parse_iperf(stdout)
+
     def link_state(self) -> float:
         return self._query(f"interface_oper_state{{{self._selector()}}}")
 
@@ -111,17 +142,22 @@ class LabOperations:
         return self._query(expression)
 
     def set_link_state(self, state: str) -> None:
-        self._run(
-            [
-                "docker", "exec", "gnmic", "gnmic",
-                "-a", f"{self.config['fault_node']}:57400",
-                "-u", "admin", "-p", "NokiaSrl1!", "--skip-verify",
-                "set",
-                "--update-path", f"/interface[name={self.config['fault_interface']}]/admin-state",
-                "--update-value", state,
-            ],
-            timeout=20,
-        )
+        command = [
+            "docker", "exec", "gnmic", "gnmic",
+            "-a", f"{self.config['fault_node']}:57400",
+            "-u", "admin", "-p", "NokiaSrl1!", "--skip-verify",
+            "set",
+            "--update-path", f"/interface[name={self.config['fault_interface']}]/admin-state",
+            "--update-value", state,
+        ]
+        record = {"timestamp": timestamp(), "state": state}
+        try:
+            record["output"] = self._run(command, timeout=20)
+            self.evidence["gnmi_operations"].append(record)
+        except Exception as error:
+            record["error"] = f"{type(error).__name__}: {error}"
+            self.evidence["gnmi_operations"].append(record)
+            raise
 
     def wait_link_state(self, expected: int) -> bool:
         deadline = time.monotonic() + float(self.config["state_timeout_seconds"])
@@ -131,15 +167,30 @@ class LabOperations:
             time.sleep(1)
         return False
 
+    def pause(self, seconds: float) -> None:
+        time.sleep(seconds)
+
+    def monotonic(self) -> float:
+        return time.monotonic()
+
 
 class Experiment:
     """Run one controlled leaf-to-spine failure and always clean it up."""
 
-    def __init__(self, operations: Any, policy: dict[str, float], *, node: str, interface: str):
+    def __init__(
+        self,
+        operations: Any,
+        policy: dict[str, float],
+        *,
+        node: str,
+        interface: str,
+        timing: dict[str, Any] | None = None,
+    ):
         self.operations = operations
         self.policy = policy
         self.node = node
         self.interface = interface
+        self.timing = timing or {}
 
     def run(self) -> dict[str, Any]:
         experiment_id = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
@@ -148,9 +199,11 @@ class Experiment:
             "scenario": {"node": self.node, "interface": self.interface},
             "timeline": [{"event": "experiment_started", "timestamp": timestamp()}],
         }
-        disabled = False
+        cleanup_required = False
         restored = False
-        restore_started = 0.0
+        traffic_process: Any = None
+        fault_offset = 0.0
+        restore_offset = 0.0
 
         try:
             self.operations.preflight()
@@ -159,28 +212,44 @@ class Experiment:
             errors_before = self.operations.error_count()
             telemetry_fresh = self.operations.telemetry_is_fresh()
 
+            pre_fault_seconds = float(self.timing.get("pre_fault_seconds", 5))
+            fault_hold_seconds = float(self.timing.get("fault_hold_seconds", 10))
+            fault_traffic_seconds = int(self.timing.get("fault_traffic_seconds", 70))
+            traffic_process = self.operations.start_fault_benchmark(fault_traffic_seconds)
+            traffic_started = self.operations.monotonic()
+            result["timeline"].append({"event": "traffic_started", "timestamp": timestamp()})
+            self.operations.pause(pre_fault_seconds)
+
+            cleanup_required = True
+            fault_offset = self.operations.monotonic() - traffic_started
             self.operations.set_link_state("disable")
-            disabled = True
             result["timeline"].append({"event": "link_disabled", "timestamp": timestamp()})
             fault_observed = self.operations.wait_link_state(0)
-            degraded = self.operations.benchmark()
+            self.operations.pause(fault_hold_seconds)
         except Exception as error:
             result["error"] = f"{type(error).__name__}: {error}"
         finally:
-            if disabled:
-                restore_started = time.monotonic()
+            if cleanup_required:
                 try:
                     self.operations.set_link_state("enable")
+                    restore_offset = self.operations.monotonic() - traffic_started
                     restored = self.operations.wait_link_state(1)
                     result["timeline"].append({"event": "link_restore_attempted", "timestamp": timestamp()})
                 except Exception as restore_error:
                     result["restore_error"] = f"{type(restore_error).__name__}: {restore_error}"
 
+        fault_benchmark = None
+        if traffic_process is not None:
+            try:
+                fault_benchmark = self.operations.finish_fault_benchmark(traffic_process)
+            except Exception as error:
+                result.setdefault("error", f"{type(error).__name__}: {error}")
+
         if "error" in result:
             result.update(
                 {
                     "result": "INCONCLUSIVE",
-                    "measurements": {},
+                    "measurements": {"restored": restored},
                     "checks": [
                         {
                             "name": "experiment_execution",
@@ -197,21 +266,51 @@ class Experiment:
                     ],
                 }
             )
+            result["evidence"] = self._operation_evidence(baseline=locals().get("baseline"), fault=fault_benchmark)
+            result["timeline"].append({"event": "experiment_finished", "timestamp": timestamp()})
             return result
 
-        recovery_seconds = time.monotonic() - restore_started
+        if "restore_error" in result:
+            result.update(
+                {
+                    "result": "INCONCLUSIVE",
+                    "measurements": {"restored": restored},
+                    "checks": [
+                        {
+                            "name": "link_restoration",
+                            "status": "INCONCLUSIVE",
+                            "observed": result["restore_error"],
+                            "expected": "link restored after fault injection",
+                        }
+                    ],
+                }
+            )
+            result["evidence"] = self._operation_evidence(baseline=baseline, fault=fault_benchmark)
+            result["timeline"].append({"event": "experiment_finished", "timestamp": timestamp()})
+            return result
+
         try:
-            recovered = self.operations.benchmark()
+            if fault_benchmark is None:
+                raise RuntimeError("fault benchmark did not produce evidence")
+            traffic = analyze_fault_intervals(
+                fault_benchmark["intervals"],
+                baseline_mbps=baseline["throughput_mbps"],
+                fault_offset=fault_offset,
+                restore_offset=restore_offset,
+                minimum_degraded_ratio=self.policy["minimum_degraded_ratio"],
+                sustained_intervals=int(self.timing.get("sustained_recovery_intervals", 2)),
+            )
             errors_after = self.operations.error_count()
             evidence = {
                 "preflight_ok": True,
                 "telemetry_fresh": telemetry_fresh and self.operations.telemetry_is_fresh(),
                 "fault_observed": fault_observed,
                 "restored": restored,
+                "traffic_recovered": traffic["traffic_recovered"],
                 "baseline_throughput_mbps": baseline["throughput_mbps"],
-                "degraded_throughput_mbps": degraded["throughput_mbps"],
-                "recovered_throughput_mbps": recovered["throughput_mbps"],
-                "recovery_seconds": recovery_seconds,
+                "degraded_throughput_mbps": traffic["degraded_throughput_mbps"],
+                "recovered_throughput_mbps": traffic["recovered_throughput_mbps"],
+                "recovery_seconds": traffic["recovery_seconds"],
                 "error_delta": max(0.0, errors_after - errors_before),
             }
             readiness, checks = evaluate(evidence, self.policy)
@@ -221,14 +320,18 @@ class Experiment:
                     "checks": checks,
                     "measurements": {
                         "baseline_throughput_mbps": round(baseline["throughput_mbps"], 3),
-                        "degraded_throughput_mbps": round(degraded["throughput_mbps"], 3),
-                        "recovered_throughput_mbps": round(recovered["throughput_mbps"], 3),
-                        "recovery_seconds": round(recovery_seconds, 3),
+                        "degraded_throughput_mbps": round(traffic["degraded_throughput_mbps"], 3),
+                        "recovered_throughput_mbps": round(traffic["recovered_throughput_mbps"], 3),
+                        "recovery_seconds": round(traffic["recovery_seconds"], 3)
+                        if traffic["recovery_seconds"] is not None else None,
+                        "maximum_interruption_seconds": round(
+                            traffic["maximum_interruption_seconds"], 3
+                        ),
                         "baseline_retransmits": baseline["retransmits"],
-                        "degraded_retransmits": degraded["retransmits"],
-                        "recovered_retransmits": recovered["retransmits"],
+                        "fault_window_retransmits": fault_benchmark["retransmits"],
                         "interface_error_delta": evidence["error_delta"],
                     },
+                    "evidence": self._operation_evidence(baseline=baseline, fault=fault_benchmark),
                 }
             )
         except Exception as error:
@@ -247,5 +350,17 @@ class Experiment:
                     ],
                 }
             )
+            result["evidence"] = self._operation_evidence(baseline=locals().get("baseline"), fault=fault_benchmark)
         result["timeline"].append({"event": "experiment_finished", "timestamp": timestamp()})
         return result
+
+    def _operation_evidence(
+        self, *, baseline: dict[str, Any] | None, fault: dict[str, Any] | None
+    ) -> dict[str, Any]:
+        return {
+            "operations": getattr(self.operations, "evidence", {}),
+            "benchmarks": {
+                "baseline": baseline,
+                "fault_window": fault,
+            },
+        }

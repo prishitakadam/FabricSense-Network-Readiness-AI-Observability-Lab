@@ -9,6 +9,10 @@ parallel_streams = 8
 state_timeout_seconds = 20
 preflight_attempts = 36
 preflight_interval_seconds = 5
+pre_fault_seconds = 5
+fault_hold_seconds = 10
+fault_traffic_seconds = 70
+sustained_recovery_intervals = 2
 
 [readiness]
 minimum_baseline_mbps = 100.0

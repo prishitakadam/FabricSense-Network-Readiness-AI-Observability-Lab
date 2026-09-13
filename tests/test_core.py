@@ -3,6 +3,7 @@ import unittest
 
 from fabric_readiness.core import (
     IperfError,
+    analyze_fault_intervals,
     evaluate,
     parse_iperf,
     parse_prometheus_value,
@@ -14,8 +15,8 @@ class IperfParsingTests(unittest.TestCase):
         payload = json.dumps(
             {
                 "intervals": [
-                    {"sum": {"bits_per_second": 800_000_000}},
-                    {"sum": {"bits_per_second": 600_000_000}},
+                    {"sum": {"start": 0, "end": 1, "bits_per_second": 800_000_000}},
+                    {"sum": {"start": 1, "end": 2, "bits_per_second": 600_000_000}},
                 ],
                 "end": {
                     "sum_sent": {"bits_per_second": 710_000_000, "retransmits": 7},
@@ -29,7 +30,10 @@ class IperfParsingTests(unittest.TestCase):
             {
                 "throughput_mbps": 700.0,
                 "retransmits": 7,
-                "intervals_mbps": [800.0, 600.0],
+                "intervals": [
+                    {"start": 0.0, "end": 1.0, "throughput_mbps": 800.0},
+                    {"start": 1.0, "end": 2.0, "throughput_mbps": 600.0},
+                ],
             },
         )
 
@@ -57,6 +61,35 @@ class PrometheusParsingTests(unittest.TestCase):
             parse_prometheus_value(payload)
 
 
+class FaultIntervalAnalysisTests(unittest.TestCase):
+    def test_measures_interruption_and_sustained_recovery_from_fault_time(self):
+        rates = [100, 100, 0, 40, 80, 85, 90, 95]
+        intervals = [
+            {"start": float(index), "end": float(index + 1), "throughput_mbps": rate}
+            for index, rate in enumerate(rates)
+        ]
+
+        result = analyze_fault_intervals(
+            intervals,
+            baseline_mbps=100,
+            fault_offset=2,
+            restore_offset=6,
+            minimum_degraded_ratio=0.7,
+            sustained_intervals=2,
+        )
+
+        self.assertEqual(
+            result,
+            {
+                "traffic_recovered": True,
+                "recovery_seconds": 2.0,
+                "maximum_interruption_seconds": 2.0,
+                "degraded_throughput_mbps": 82.5,
+                "recovered_throughput_mbps": 92.5,
+            },
+        )
+
+
 class ReadinessEvaluationTests(unittest.TestCase):
     policy = {
         "minimum_baseline_mbps": 100.0,
@@ -71,6 +104,7 @@ class ReadinessEvaluationTests(unittest.TestCase):
             "preflight_ok": True,
             "telemetry_fresh": True,
             "fault_observed": True,
+            "traffic_recovered": True,
             "restored": True,
             "baseline_throughput_mbps": 800.0,
             "degraded_throughput_mbps": 600.0,

@@ -15,6 +15,20 @@
     "type=bind,src=/var/lib/docker,dst=/var/lib/docker",
     "type=bind,src=/lib/modules,dst=/lib/modules"
   ],
+  "forwardPorts": [
+    3000,
+    9090
+  ],
+  "portsAttributes": {
+    "3000": {
+      "label": "Grafana",
+      "onAutoForward": "openPreview"
+    },
+    "9090": {
+      "label": "Prometheus",
+      "onAutoForward": "notify"
+    }
+  },
   "workspaceFolder": "${localWorkspaceFolder}",
   "workspaceMount": "source=${localWorkspaceFolder},target=${localWorkspaceFolder},type=bind,consistency=cached"
 }

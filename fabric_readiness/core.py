@@ -23,8 +23,12 @@ def parse_iperf(payload: str) -> dict[str, Any]:
         return {
             "throughput_mbps": receiver["bits_per_second"] / 1_000_000,
             "retransmits": int(sender.get("retransmits", 0)),
-            "intervals_mbps": [
-                interval["sum"]["bits_per_second"] / 1_000_000
+            "intervals": [
+                {
+                    "start": float(interval["sum"]["start"]),
+                    "end": float(interval["sum"]["end"]),
+                    "throughput_mbps": interval["sum"]["bits_per_second"] / 1_000_000,
+                }
                 for interval in intervals
             ],
         }
@@ -32,6 +36,55 @@ def parse_iperf(payload: str) -> dict[str, Any]:
         raise
     except (KeyError, TypeError, json.JSONDecodeError) as error:
         raise IperfError(f"invalid iperf3 JSON: {error}") from error
+
+
+def analyze_fault_intervals(
+    intervals: list[dict[str, float]],
+    *,
+    baseline_mbps: float,
+    fault_offset: float,
+    restore_offset: float,
+    minimum_degraded_ratio: float,
+    sustained_intervals: int = 2,
+) -> dict[str, Any]:
+    """Measure traffic interruption and recovery from one continuous iperf run."""
+    threshold = baseline_mbps * minimum_degraded_ratio
+    fault_intervals = [interval for interval in intervals if interval["end"] > fault_offset]
+
+    recovery_start: float | None = None
+    for index, interval in enumerate(fault_intervals):
+        window = fault_intervals[index : index + sustained_intervals]
+        if len(window) == sustained_intervals and all(
+            item["throughput_mbps"] >= threshold for item in window
+        ):
+            recovery_start = max(interval["start"], fault_offset)
+            break
+
+    traffic_recovered = recovery_start is not None
+    end_offset = intervals[-1]["end"] if intervals else fault_offset
+    maximum_interruption_seconds = (
+        recovery_start - fault_offset if recovery_start is not None else end_offset - fault_offset
+    )
+
+    degraded_start = recovery_start if recovery_start is not None else fault_offset
+    degraded = [
+        interval["throughput_mbps"]
+        for interval in intervals
+        if interval["start"] >= degraded_start and interval["start"] < restore_offset
+    ]
+    recovered = [
+        interval["throughput_mbps"]
+        for interval in intervals
+        if interval["start"] >= restore_offset
+    ]
+
+    return {
+        "traffic_recovered": traffic_recovered,
+        "recovery_seconds": maximum_interruption_seconds if traffic_recovered else None,
+        "maximum_interruption_seconds": maximum_interruption_seconds,
+        "degraded_throughput_mbps": sum(degraded) / len(degraded) if degraded else 0.0,
+        "recovered_throughput_mbps": sum(recovered) / len(recovered) if recovered else 0.0,
+    }
 
 
 def parse_prometheus_value(payload: dict[str, Any]) -> float:
@@ -72,6 +125,7 @@ def evaluate(
         trust=True,
     )
     add("fault_observed", evidence["fault_observed"], evidence["fault_observed"], "true", trust=True)
+    add("traffic_recovered", evidence["traffic_recovered"], evidence["traffic_recovered"], "true")
 
     baseline = float(evidence["baseline_throughput_mbps"])
     add(
@@ -90,10 +144,10 @@ def evaluate(
     )
     add("link_restoration", evidence["restored"], evidence["restored"], "true")
 
-    recovery_seconds = float(evidence["recovery_seconds"])
+    recovery_seconds = evidence["recovery_seconds"]
     add(
         "recovery_time",
-        recovery_seconds <= policy["maximum_recovery_seconds"],
+        recovery_seconds is not None and float(recovery_seconds) <= policy["maximum_recovery_seconds"],
         recovery_seconds,
         f"<= {policy['maximum_recovery_seconds']} seconds",
     )
