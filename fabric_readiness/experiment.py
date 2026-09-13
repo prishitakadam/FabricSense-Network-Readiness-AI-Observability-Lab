@@ -50,6 +50,20 @@ class LabOperations:
         return f'source="{self.config["fault_node"]}",interface_name="{short_interface}"'
 
     def preflight(self) -> None:
+        attempts = int(self.config.get("preflight_attempts", 1))
+        interval = float(self.config.get("preflight_interval_seconds", 5))
+        last_error: Exception | None = None
+        for attempt in range(attempts):
+            try:
+                self._preflight_once()
+                return
+            except (RuntimeError, subprocess.SubprocessError, OSError, ValueError) as error:
+                last_error = error
+                if attempt + 1 < attempts:
+                    time.sleep(interval)
+        raise RuntimeError(f"lab did not become ready: {last_error}")
+
+    def _preflight_once(self) -> None:
         for container in REQUIRED_CONTAINERS:
             running = self._run(["docker", "inspect", "-f", "{{.State.Running}}", container]).strip()
             if running != "true":

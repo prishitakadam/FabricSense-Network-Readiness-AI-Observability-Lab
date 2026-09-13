@@ -24,6 +24,12 @@ class LabConfigurationTests(unittest.TestCase):
         self.assertIn("url: http://prometheus:9090", datasource)
         self.assertNotIn("type: loki", datasource)
 
+    def test_one_command_workflow_is_available(self):
+        makefile = (ROOT / "Makefile").read_text()
+
+        self.assertIn("experiment: deploy", makefile)
+        self.assertIn("python3 -m fabric_readiness run", makefile)
+
 
 if __name__ == "__main__":
     unittest.main()

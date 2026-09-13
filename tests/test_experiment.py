@@ -1,6 +1,6 @@
 import unittest
 
-from fabric_readiness.experiment import Experiment
+from fabric_readiness.experiment import Experiment, LabOperations
 
 
 class FakeOperations:
@@ -55,6 +55,29 @@ class ExperimentTests(unittest.TestCase):
             operations.events,
             ["preflight", "set:disable", "wait:0", "set:enable", "wait:1"],
         )
+
+
+class RetryingLabOperations(LabOperations):
+    def __init__(self):
+        super().__init__(
+            {"preflight_attempts": 2, "preflight_interval_seconds": 0},
+            maximum_telemetry_age=15,
+        )
+        self.attempts = 0
+
+    def _preflight_once(self):
+        self.attempts += 1
+        if self.attempts == 1:
+            raise RuntimeError("BGP is still converging")
+
+
+class LabOperationsTests(unittest.TestCase):
+    def test_preflight_retries_while_the_fabric_converges(self):
+        operations = RetryingLabOperations()
+
+        operations.preflight()
+
+        self.assertEqual(operations.attempts, 2)
 
 
 if __name__ == "__main__":
