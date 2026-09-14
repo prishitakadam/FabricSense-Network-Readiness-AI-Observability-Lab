@@ -163,6 +163,75 @@ class RetryingLabOperations(LabOperations):
 
 
 class LabOperationsTests(unittest.TestCase):
+    def test_benchmark_includes_configured_iperf_mss(self):
+        class RecordingLabOperations(LabOperations):
+            def __init__(self):
+                super().__init__(
+                    {
+                        "source_container": "client2",
+                        "destination_address": "172.17.0.1",
+                        "parallel_streams": 1,
+                        "benchmark_seconds": 10,
+                        "iperf_mss": 1200,
+                    },
+                    maximum_telemetry_age=15,
+                )
+                self.command = []
+
+            def _run(self, command, timeout=60):
+                self.command = command
+                return (
+                    '{"intervals":[],"end":{"sum_sent":{"retransmits":0},'
+                    '"sum_received":{"bits_per_second":1}}}'
+                )
+
+        operations = RecordingLabOperations()
+
+        operations.benchmark()
+
+        self.assertIn("-M", operations.command)
+        self.assertIn("1200", operations.command)
+
+    def test_fault_benchmark_includes_configured_iperf_mss(self):
+        class RecordingLabOperations(LabOperations):
+            def __init__(self):
+                super().__init__(
+                    {
+                        "source_container": "client2",
+                        "destination_address": "172.17.0.1",
+                        "parallel_streams": 1,
+                        "iperf_mss": 1200,
+                    },
+                    maximum_telemetry_age=15,
+                )
+                self.command = []
+
+            def _popen(self, command):
+                self.command = command
+                return "process"
+
+        operations = RecordingLabOperations()
+
+        process = operations.start_fault_benchmark(10)
+
+        self.assertEqual(process, "process")
+        self.assertIn("-M", operations.command)
+        self.assertIn("1200", operations.command)
+
+    def test_iperf_mss_is_optional(self):
+        operations = LabOperations(
+            {
+                "source_container": "client2",
+                "destination_address": "172.17.0.1",
+                "parallel_streams": 1,
+            },
+            maximum_telemetry_age=15,
+        )
+
+        command = operations._iperf_command(10)
+
+        self.assertNotIn("-M", command)
+
     def test_preflight_retries_while_the_fabric_converges(self):
         operations = RetryingLabOperations()
 

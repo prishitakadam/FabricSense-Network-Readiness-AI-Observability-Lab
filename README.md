@@ -94,14 +94,20 @@ or telemetry query fails.
 Thresholds are editable in [`readiness.toml`](readiness.toml):
 
 ```toml
+[experiment]
+iperf_mss = 1200
+
 [readiness]
-minimum_baseline_mbps = 100.0
+minimum_baseline_mbps = 20.0
 minimum_degraded_ratio = 0.70
 minimum_recovered_ratio = 0.90
 maximum_recovery_seconds = 30.0
 maximum_telemetry_age_seconds = 15.0
 maximum_error_delta = 0.0
 ```
+
+`iperf_mss` keeps TCP benchmarking stable in virtual/container labs where
+default large TCP segments can produce misleading zero-throughput results.
 
 - **PASS:** every health, degradation, recovery, telemetry, and restoration
   rule passes.

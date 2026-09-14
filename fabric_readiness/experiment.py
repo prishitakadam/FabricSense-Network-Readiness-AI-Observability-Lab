@@ -99,29 +99,31 @@ class LabOperations:
 
     def benchmark(self) -> dict[str, Any]:
         seconds = int(self.config["benchmark_seconds"])
-        output = self._run(
-            [
-                "docker", "exec", self.config["source_container"], "iperf3",
-                "-c", self.config["destination_address"],
-                "-P", str(self.config["parallel_streams"]),
-                "-t", str(seconds), "-i", "1", "--json",
-            ],
-            timeout=seconds + 20,
-        )
+        output = self._run(self._iperf_command(seconds), timeout=seconds + 20)
         return parse_iperf(output)
 
-    def start_fault_benchmark(self, seconds: int) -> subprocess.Popen[str]:
+    def _iperf_command(self, seconds: int) -> list[str]:
+        command = [
+            "docker", "exec", self.config["source_container"], "iperf3",
+            "-c", self.config["destination_address"],
+            "-P", str(self.config["parallel_streams"]),
+            "-t", str(seconds), "-i", "1",
+        ]
+        if self.config.get("iperf_mss"):
+            command.extend(["-M", str(self.config["iperf_mss"])])
+        command.append("--json")
+        return command
+
+    def _popen(self, command: list[str]) -> subprocess.Popen[str]:
         return subprocess.Popen(
-            [
-                "docker", "exec", self.config["source_container"], "iperf3",
-                "-c", self.config["destination_address"],
-                "-P", str(self.config["parallel_streams"]),
-                "-t", str(seconds), "-i", "1", "--json",
-            ],
+            command,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
         )
+
+    def start_fault_benchmark(self, seconds: int) -> subprocess.Popen[str]:
+        return self._popen(self._iperf_command(seconds))
 
     def finish_fault_benchmark(self, process: subprocess.Popen[str]) -> dict[str, Any]:
         seconds = int(self.config.get("fault_traffic_seconds", self.config["benchmark_seconds"]))
