@@ -1,0 +1,24 @@
+[experiment]
+source_container = "client2"
+destination_address = "172.17.0.1"
+fault_node = "leaf1"
+fault_interface = "ethernet-1/49"
+prometheus_url = "http://localhost:9090"
+benchmark_seconds = 15
+parallel_streams = 8
+iperf_mss = 1200
+state_timeout_seconds = 20
+preflight_attempts = 36
+preflight_interval_seconds = 5
+pre_fault_seconds = 5
+fault_hold_seconds = 10
+fault_traffic_seconds = 70
+sustained_recovery_intervals = 2
+
+[readiness]
+minimum_baseline_mbps = 20.0
+minimum_degraded_ratio = 0.70
+minimum_recovered_ratio = 0.90
+maximum_recovery_seconds = 30.0
+maximum_telemetry_age_seconds = 15.0
+maximum_error_delta = 0.0
