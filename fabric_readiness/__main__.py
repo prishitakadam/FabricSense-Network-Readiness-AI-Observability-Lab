@@ -19,12 +19,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("command", choices=["run"])
     parser.add_argument("--config", type=Path, default=Path("readiness.toml"))
     parser.add_argument("--output", type=Path, default=Path("artifacts"))
+    parser.add_argument("--maximum-error-delta", type=float)
     args = parser.parse_args(argv)
 
     with args.config.open("rb") as config_file:
         config = tomllib.load(config_file)
     experiment_config = config["experiment"]
-    policy = config["readiness"]
+    policy = dict(config["readiness"])
+    if args.maximum_error_delta is not None:
+        policy["maximum_error_delta"] = args.maximum_error_delta
     operations = LabOperations(experiment_config, policy["maximum_telemetry_age_seconds"])
     result = Experiment(
         operations,

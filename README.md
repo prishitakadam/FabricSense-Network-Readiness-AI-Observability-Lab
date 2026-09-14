@@ -22,6 +22,13 @@ make deploy
 make experiment
 ```
 
+For noisy virtual-lab runs, keep the default policy in `readiness.toml` and
+override the interface error threshold only for that run:
+
+```bash
+make experiment ARGS="--maximum-error-delta 2000"
+```
+
 Use `make all` when you want to deploy and run the experiment in one command.
 The initial image download can take 10–20 minutes. Later runs are faster.
 The command waits up to three minutes for the fabric and telemetry to converge.
@@ -108,6 +115,9 @@ maximum_error_delta = 0.0
 
 `iperf_mss` keeps TCP benchmarking stable in virtual/container labs where
 default large TCP segments can produce misleading zero-throughput results.
+`maximum_error_delta` can also be overridden per run with
+`--maximum-error-delta` when a virtual lab reports expected counter noise during
+an intentional link flap.
 
 - **PASS:** every health, degradation, recovery, telemetry, and restoration
   rule passes.
@@ -131,6 +141,7 @@ the fabric.
 ```bash
 make deploy      # deploy or recreate the lab
 make experiment  # run the readiness experiment against an existing lab
+make experiment ARGS="--maximum-error-delta 2000"
 make all         # deploy the lab, then run the readiness experiment
 make test        # run tests without deploying the lab
 make destroy     # remove all lab containers and generated lab files

@@ -6,7 +6,7 @@ deploy:
 	sudo containerlab deploy --reconfigure -t st.clab.yml
 
 experiment:
-	python3 -m fabric_readiness run
+	python3 -m fabric_readiness run $(ARGS)
 
 test:
 	python3 -m unittest discover -s tests -v

@@ -30,7 +30,7 @@ class LabConfigurationTests(unittest.TestCase):
         makefile = (ROOT / "Makefile").read_text()
 
         self.assertIn("all: deploy experiment", makefile)
-        self.assertIn("experiment:\n\tpython3 -m fabric_readiness run", makefile)
+        self.assertIn("experiment:\n\tpython3 -m fabric_readiness run $(ARGS)", makefile)
         self.assertNotIn("experiment: deploy", makefile)
         self.assertIn("python3 -m fabric_readiness run", makefile)
 
