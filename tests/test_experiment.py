@@ -1,4 +1,5 @@
 import unittest
+from subprocess import CalledProcessError
 
 from fabric_readiness.experiment import Experiment, LabOperations
 
@@ -168,6 +169,46 @@ class LabOperationsTests(unittest.TestCase):
         operations.preflight()
 
         self.assertEqual(operations.attempts, 2)
+
+    def test_link_state_uses_gnmic_binary_path_inside_container(self):
+        class RecordingLabOperations(LabOperations):
+            def __init__(self):
+                super().__init__(
+                    {
+                        "fault_node": "leaf1",
+                        "fault_interface": "ethernet-1/49",
+                    },
+                    maximum_telemetry_age=15,
+                )
+                self.command = []
+
+            def _run(self, command, timeout=60):
+                self.command = command
+                return "ok"
+
+        operations = RecordingLabOperations()
+
+        operations.set_link_state("disable")
+
+        self.assertEqual(operations.command[:4], ["docker", "exec", "gnmic", "/app/gnmic"])
+
+    def test_failed_command_includes_stderr_in_exception(self):
+        class FailingLabOperations(LabOperations):
+            def __init__(self):
+                super().__init__({}, maximum_telemetry_age=15)
+
+            def _run(self, command, timeout=60):
+                raise CalledProcessError(
+                    126,
+                    command,
+                    output="stdout text",
+                    stderr="permission denied",
+                )
+
+        operations = FailingLabOperations()
+
+        with self.assertRaisesRegex(RuntimeError, "permission denied"):
+            operations.run_checked(["bad-command"])
 
 
 if __name__ == "__main__":

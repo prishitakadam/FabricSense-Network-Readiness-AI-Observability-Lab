@@ -10,12 +10,19 @@ restores the link, and produces an evidence-based readiness result.
 1. Open this repository on GitHub and select **Code → Codespaces → Create
    codespace**. Choose a machine with at least 4 cores and 16 GB RAM.
 2. Wait for the development container to finish starting.
-3. Run:
+3. Deploy the lab:
+
+```bash
+make deploy
+```
+
+4. Run the readiness experiment:
 
 ```bash
 make experiment
 ```
 
+Use `make all` when you want to deploy and run the experiment in one command.
 The initial image download can take 10–20 minutes. Later runs are faster.
 The command waits up to three minutes for the fabric and telemetry to converge.
 
@@ -117,7 +124,8 @@ the fabric.
 
 ```bash
 make deploy      # deploy or recreate the lab
-make experiment  # deploy and run the complete readiness experiment
+make experiment  # run the readiness experiment against an existing lab
+make all         # deploy the lab, then run the readiness experiment
 make test        # run tests without deploying the lab
 make destroy     # remove all lab containers and generated lab files
 ```

@@ -26,10 +26,12 @@ class LabConfigurationTests(unittest.TestCase):
         self.assertNotIn("type: loki", datasource)
         self.assertNotIn('"type": "loki"', dashboard)
 
-    def test_one_command_workflow_is_available(self):
+    def test_deploy_and_experiment_are_separate_targets(self):
         makefile = (ROOT / "Makefile").read_text()
 
-        self.assertIn("experiment: deploy", makefile)
+        self.assertIn("all: deploy experiment", makefile)
+        self.assertIn("experiment:\n\tpython3 -m fabric_readiness run", makefile)
+        self.assertNotIn("experiment: deploy", makefile)
         self.assertIn("python3 -m fabric_readiness run", makefile)
 
 

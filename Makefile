@@ -1,9 +1,11 @@
-.PHONY: deploy experiment test destroy
+.PHONY: all deploy experiment test destroy
+
+all: deploy experiment
 
 deploy:
 	sudo containerlab deploy --reconfigure -t st.clab.yml
 
-experiment: deploy
+experiment:
 	python3 -m fabric_readiness run
 
 test:

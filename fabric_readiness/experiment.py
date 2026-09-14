@@ -41,6 +41,15 @@ class LabOperations:
         )
         return completed.stdout
 
+    def run_checked(self, command: list[str], timeout: int = 60) -> str:
+        try:
+            return self._run(command, timeout=timeout)
+        except subprocess.CalledProcessError as error:
+            details = (error.stderr or error.stdout or str(error)).strip()
+            raise RuntimeError(
+                f"{' '.join(command)} failed with exit {error.returncode}: {details}"
+            ) from error
+
     def _query(self, expression: str) -> float:
         query = urlencode({"query": expression})
         with urlopen(f"{self.config['prometheus_url']}/api/v1/query?{query}", timeout=10) as response:
@@ -143,7 +152,7 @@ class LabOperations:
 
     def set_link_state(self, state: str) -> None:
         command = [
-            "docker", "exec", "gnmic", "gnmic",
+            "docker", "exec", "gnmic", "/app/gnmic",
             "-a", f"{self.config['fault_node']}:57400",
             "-u", "admin", "-p", "NokiaSrl1!", "--skip-verify",
             "set",
@@ -152,7 +161,7 @@ class LabOperations:
         ]
         record = {"timestamp": timestamp(), "state": state}
         try:
-            record["output"] = self._run(command, timeout=20)
+            record["output"] = self.run_checked(command, timeout=20)
             self.evidence["gnmi_operations"].append(record)
         except Exception as error:
             record["error"] = f"{type(error).__name__}: {error}"
