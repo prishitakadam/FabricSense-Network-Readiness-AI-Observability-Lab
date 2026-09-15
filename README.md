@@ -1,9 +1,11 @@
-# Network Fabric Observability & Readiness Lab
+# FabricSense: Network Readiness & AI Observability Lab
 
-An automated resilience experiment for a virtual Nokia SR Linux leaf-spine
-fabric. One command deploys the network and observability stack, measures a
-healthy baseline, disables a leaf-spine link, measures degraded performance,
-restores the link, and produces an evidence-based readiness result.
+A virtual Nokia SR Linux Clos fabric lab for network resilience validation and
+AI-assisted observability. The project deploys a Containerlab leaf-spine fabric,
+streams switch telemetry into Prometheus and Grafana, runs controlled traffic
+and link-failure experiments, generates evidence-based readiness reports, and
+exposes read-only MCP tools so an AI assistant can investigate live fabric
+telemetry.
 
 ## Run the lab in GitHub Codespaces
 
@@ -46,13 +48,19 @@ Exit codes are `0` for PASS, `1` for FAIL, and `2` for INCONCLUSIVE.
 ## Architecture
 
 ```text
+Traffic path:
 client2 ─ leaf2 ─┬─ spine1 ─┬─ leaf1 ─ client1
                  └─ spine2 ─┘
 
-SR Linux ──gNMI──> gNMIc ──scrape──> Prometheus ──> Grafana
-     ^                                  |
-     | gNMI Set                         | HTTP queries
-     └──────── Python experiment runner ┘
+Telemetry and investigation path:
+SR Linux switches ──gNMI──> gNMIc ──scrape──> Prometheus ──> Grafana
+        ^                                      │
+        │ gNMI Set                             │ PromQL / HTTP
+        └──── Python readiness runner          └──── MCP server ──> AI assistant
+
+Evidence and analysis outputs:
+Python readiness runner ──> Markdown readiness report and JSON evidence bundle
+MCP-enabled assistant    ──> Natural-language investigation of live Prometheus telemetry
 ```
 
 The complete topology contains three leaves, two spines, and three Linux
