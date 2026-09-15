@@ -2,6 +2,7 @@ import io
 import json
 import os
 import ssl
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -53,6 +54,38 @@ class PrometheusClientTests(unittest.TestCase):
                 PrometheusClient.from_environment().base_url,
                 "http://prom.example:9090",
             )
+
+    def test_reads_url_from_file_environment_when_url_is_not_set(self):
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8") as file:
+            file.write("https://codespace-prometheus.example\n")
+            file.flush()
+
+            with patch.dict(
+                os.environ,
+                {"PROMETHEUS_URL_FILE": file.name},
+                clear=True,
+            ):
+                self.assertEqual(
+                    PrometheusClient.from_environment().base_url,
+                    "https://codespace-prometheus.example",
+                )
+
+    def test_prometheus_url_overrides_url_file(self):
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8") as file:
+            file.write("https://stale-prometheus.example\n")
+            file.flush()
+
+            with patch.dict(
+                os.environ,
+                {
+                    "PROMETHEUS_URL": "https://current-prometheus.example",
+                    "PROMETHEUS_URL_FILE": file.name,
+                },
+            ):
+                self.assertEqual(
+                    PrometheusClient.from_environment().base_url,
+                    "https://current-prometheus.example",
+                )
 
     def test_can_skip_tls_verification_for_codespaces_forwarded_prometheus(self):
         with patch.dict(os.environ, {"PROMETHEUS_INSECURE_SKIP_VERIFY": "1"}):

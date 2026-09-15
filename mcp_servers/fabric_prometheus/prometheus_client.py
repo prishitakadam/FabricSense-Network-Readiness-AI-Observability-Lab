@@ -20,10 +20,16 @@ class PrometheusClient:
     @classmethod
     def from_environment(cls) -> "PrometheusClient":
         skip_verify = os.environ.get("PROMETHEUS_INSECURE_SKIP_VERIFY") == "1"
-        return cls(
-            os.environ.get("PROMETHEUS_URL", "http://localhost:9090"),
-            verify_tls=not skip_verify,
-        )
+        return cls(cls._base_url_from_environment(), verify_tls=not skip_verify)
+
+    @classmethod
+    def _base_url_from_environment(cls) -> str:
+        if url := os.environ.get("PROMETHEUS_URL"):
+            return url
+        if url_file := os.environ.get("PROMETHEUS_URL_FILE"):
+            with open(url_file, encoding="utf-8") as file:
+                return file.read().strip()
+        return "http://localhost:9090"
 
     def instant_query(self, query: str) -> list[dict[str, Any]]:
         payload = self._get("/api/v1/query", {"query": query})

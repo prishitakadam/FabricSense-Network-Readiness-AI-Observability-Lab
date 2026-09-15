@@ -166,6 +166,17 @@ PROMETHEUS_URL="https://<prometheus-forwarded-url>" \
 python3 -m mcp_servers.fabric_prometheus.server
 ```
 
+For Codespaces URLs that change often, keep the current URL in a local ignored
+file and point the MCP server at that file:
+
+```bash
+mkdir -p .local
+printf '%s\n' 'https://<prometheus-forwarded-url>' > .local/prometheus-url
+
+PROMETHEUS_URL_FILE="$PWD/.local/prometheus-url" \
+python3 -m mcp_servers.fabric_prometheus.server
+```
+
 If your local Python install does not trust the Codespaces forwarded
 certificate chain, use the development-only TLS bypass:
 
@@ -189,11 +200,13 @@ startup_timeout_sec = 10
 
 [mcp_servers.srl_fabric_prometheus.env]
 PYTHONPATH = "/absolute/path/to/Network-Fabric-Observability-Resilience-Testing"
-PROMETHEUS_URL = "https://<prometheus-forwarded-url>"
+PROMETHEUS_URL_FILE = "/absolute/path/to/Network-Fabric-Observability-Resilience-Testing/.local/prometheus-url"
 PROMETHEUS_INSECURE_SKIP_VERIFY = "1"
 ```
 
 Restart Codex after editing the config so the MCP server is loaded.
+When Codespaces gives you a new forwarded URL, update only `.local/prometheus-url`
+and restart Codex.
 
 The MCP server is intentionally read-only. It can query Prometheus, but it
 cannot run shell commands, disable links, repair links, or change SR Linux
