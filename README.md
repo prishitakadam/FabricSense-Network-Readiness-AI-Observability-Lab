@@ -146,6 +146,7 @@ manual report path, screenshot, or PromQL query.
 Start the MCP server from the repository root:
 
 ```bash
+python3 -m pip install -r requirements.txt
 python3 -m mcp_servers.fabric_prometheus.server
 ```
 
@@ -220,6 +221,7 @@ make deploy      # deploy or recreate the lab
 make experiment  # run the readiness experiment against an existing lab
 make experiment ARGS="--maximum-error-delta 2000"
 make all         # deploy the lab, then run the readiness experiment
+make setup       # install Python dependencies for MCP support
 make test        # run tests without deploying the lab
 make destroy     # remove all lab containers and generated lab files
 ```

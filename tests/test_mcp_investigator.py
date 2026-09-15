@@ -5,9 +5,12 @@ import ssl
 import unittest
 from unittest.mock import patch
 
+import anyio
+from mcp import Client
+
 from mcp_servers.fabric_prometheus.fabric_investigator import FabricInvestigator
 from mcp_servers.fabric_prometheus.prometheus_client import PrometheusClient
-from mcp_servers.fabric_prometheus.server import MCPServer
+from mcp_servers.fabric_prometheus import server
 
 
 class FakePrometheus:
@@ -122,39 +125,44 @@ class FabricInvestigatorTests(unittest.TestCase):
 
 
 class MCPServerTests(unittest.TestCase):
-    def test_lists_read_only_fabric_tools(self):
-        tools = MCPServer(FakePrometheus()).list_tools()
-        names = {tool["name"] for tool in tools}
+    def test_fabric_tools_are_read_only_sdk_tool_functions(self):
+        tool_names = {
+            "fabric_down_links",
+            "fabric_link_changes",
+            "fabric_interface_errors",
+            "fabric_top_traffic",
+            "fabric_telemetry_health",
+            "prometheus_instant_query",
+            "prometheus_range_query",
+        }
 
-        self.assertIn("fabric_down_links", names)
-        self.assertIn("fabric_link_changes", names)
-        self.assertIn("prometheus_instant_query", names)
-        self.assertNotIn("set_link_state", names)
-        self.assertNotIn("docker_exec", names)
+        for name in tool_names:
+            self.assertTrue(callable(getattr(server, name)))
 
-    def test_calls_fabric_tool(self):
-        result = MCPServer(FakePrometheus()).call_tool(
-            "fabric_link_changes", {"window": "30m"}
-        )
+        self.assertFalse(hasattr(server, "set_link_state"))
+        self.assertFalse(hasattr(server, "docker_exec"))
+
+    def test_sdk_tool_function_queries_prometheus(self):
+        with patch.object(server.PrometheusClient, "from_environment", return_value=FakePrometheus()):
+            result = server.fabric_link_changes("30m")
 
         self.assertEqual(result["query"], "changes(interface_oper_state[30m]) > 0")
 
-    def test_handles_mcp_tools_call_request(self):
-        response = MCPServer(FakePrometheus()).handle(
-            {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "tools/call",
-                "params": {"name": "fabric_down_links", "arguments": {}},
-            }
-        )
+    def test_official_sdk_registers_and_calls_tools(self):
+        async def run_client():
+            with patch.object(server.PrometheusClient, "from_environment", return_value=FakePrometheus()):
+                async with Client(server.mcp) as client:
+                    tools = await client.list_tools()
+                    names = {tool.name for tool in tools.tools}
+                    result = await client.call_tool(
+                        "fabric_link_changes", {"window": "30m"}
+                    )
+            return names, result.structured_content
 
-        self.assertEqual(response["id"], 1)
-        self.assertIn("leaf1:e1-49", response["result"]["content"][0]["text"])
+        names, result = anyio.run(run_client)
 
-    def test_rejects_unknown_tool(self):
-        with self.assertRaisesRegex(ValueError, "unknown MCP tool"):
-            MCPServer(FakePrometheus()).call_tool("set_link_state", {})
+        self.assertIn("fabric_link_changes", names)
+        self.assertEqual(result["query"], "changes(interface_oper_state[30m]) > 0")
 
 
 if __name__ == "__main__":

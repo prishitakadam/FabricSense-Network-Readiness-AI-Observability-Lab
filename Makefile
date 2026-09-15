@@ -1,4 +1,4 @@
-.PHONY: all deploy experiment test destroy
+.PHONY: all deploy experiment setup test destroy
 
 all: deploy experiment
 
@@ -7,6 +7,9 @@ deploy:
 
 experiment:
 	python3 -m fabric_readiness run $(ARGS)
+
+setup:
+	python3 -m pip install -r requirements.txt
 
 test:
 	python3 -m unittest discover -s tests -v
