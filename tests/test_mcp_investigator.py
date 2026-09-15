@@ -5,9 +5,9 @@ import ssl
 import unittest
 from unittest.mock import patch
 
-from fabric_readiness.fabric_investigator import FabricInvestigator
-from fabric_readiness.mcp_server import MCPServer
-from fabric_readiness.prometheus_client import PrometheusClient
+from mcp_servers.fabric_prometheus.fabric_investigator import FabricInvestigator
+from mcp_servers.fabric_prometheus.prometheus_client import PrometheusClient
+from mcp_servers.fabric_prometheus.server import MCPServer
 
 
 class FakePrometheus:
@@ -66,7 +66,7 @@ class PrometheusClientTests(unittest.TestCase):
         def fake_urlopen(request, timeout):
             return io.BytesIO(json.dumps(payload).encode())
 
-        with patch("fabric_readiness.prometheus_client.urlopen", fake_urlopen):
+        with patch("mcp_servers.fabric_prometheus.prometheus_client.urlopen", fake_urlopen):
             result = PrometheusClient("http://prometheus:9090").instant_query("up")
 
         self.assertEqual(result, payload["data"]["result"])
@@ -79,7 +79,7 @@ class PrometheusClientTests(unittest.TestCase):
             captured["context"] = context
             return io.BytesIO(json.dumps(payload).encode())
 
-        with patch("fabric_readiness.prometheus_client.urlopen", fake_urlopen):
+        with patch("mcp_servers.fabric_prometheus.prometheus_client.urlopen", fake_urlopen):
             PrometheusClient("https://prometheus.example", verify_tls=False).instant_query("up")
 
         self.assertIsInstance(captured["context"], ssl.SSLContext)

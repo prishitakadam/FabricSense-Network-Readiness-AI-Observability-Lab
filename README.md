@@ -146,14 +146,15 @@ manual report path, screenshot, or PromQL query.
 Start the MCP server from the repository root:
 
 ```bash
-python3 -m fabric_readiness.mcp_server
+python3 -m mcp_servers.fabric_prometheus.server
 ```
 
 By default it queries Prometheus at `http://localhost:9090`. Override that when
 Prometheus is forwarded elsewhere:
 
 ```bash
-PROMETHEUS_URL="https://<prometheus-forwarded-url>" python3 -m fabric_readiness.mcp_server
+PROMETHEUS_URL="https://<prometheus-forwarded-url>" \
+python3 -m mcp_servers.fabric_prometheus.server
 ```
 
 If your local Python install does not trust the Codespaces forwarded
@@ -162,8 +163,28 @@ certificate chain, use the development-only TLS bypass:
 ```bash
 PROMETHEUS_URL="https://<prometheus-forwarded-url>" \
 PROMETHEUS_INSECURE_SKIP_VERIFY=1 \
-python3 -m fabric_readiness.mcp_server
+python3 -m mcp_servers.fabric_prometheus.server
 ```
+
+To install this server in Codex, add an MCP entry to your local Codex config
+using the absolute path to this repository checkout:
+
+```toml
+[mcp_servers.srl_fabric_prometheus]
+command = "python3"
+args = [
+  "-m",
+  "mcp_servers.fabric_prometheus.server"
+]
+startup_timeout_sec = 10
+
+[mcp_servers.srl_fabric_prometheus.env]
+PYTHONPATH = "/absolute/path/to/Network-Fabric-Observability-Resilience-Testing"
+PROMETHEUS_URL = "https://<prometheus-forwarded-url>"
+PROMETHEUS_INSECURE_SKIP_VERIFY = "1"
+```
+
+Restart Codex after editing the config so the MCP server is loaded.
 
 The MCP server is intentionally read-only. It can query Prometheus, but it
 cannot run shell commands, disable links, repair links, or change SR Linux
@@ -208,6 +229,7 @@ make destroy     # remove all lab containers and generated lab files
 ```text
 configs/             SR Linux, gNMIc, Prometheus, and Grafana configuration
 fabric_readiness/    experiment runner, evaluation, and report generation
+mcp_servers/         read-only MCP server for Prometheus-backed AI investigation
 tests/               fast unit and static configuration tests
 st.clab.yml          Containerlab topology
 readiness.toml        scenario values and explicit readiness thresholds
