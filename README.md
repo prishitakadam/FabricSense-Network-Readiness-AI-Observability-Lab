@@ -136,6 +136,53 @@ After deployment, use the Codespaces **Ports** tab to open:
 The provisioned Grafana dashboard shows interface state and traffic rate across
 the fabric.
 
+## AI-assisted fabric investigation with MCP
+
+This repository includes a read-only MCP server that exposes Prometheus-backed
+fabric investigation tools to an AI assistant. The assistant can answer
+natural-language questions by querying live telemetry, without requiring a
+manual report path, screenshot, or PromQL query.
+
+Start the MCP server from the repository root:
+
+```bash
+python3 -m fabric_readiness.mcp_server
+```
+
+By default it queries Prometheus at `http://localhost:9090`. Override that when
+Prometheus is forwarded elsewhere:
+
+```bash
+PROMETHEUS_URL="https://<prometheus-forwarded-url>" python3 -m fabric_readiness.mcp_server
+```
+
+The MCP server is intentionally read-only. It can query Prometheus, but it
+cannot run shell commands, disable links, repair links, or change SR Linux
+configuration.
+
+Supported investigation tools include:
+
+- `fabric_down_links`
+- `fabric_link_changes`
+- `fabric_interface_errors`
+- `fabric_top_traffic`
+- `fabric_telemetry_health`
+- `prometheus_instant_query`
+- `prometheus_range_query`
+
+Good questions for the assistant:
+
+- Which interfaces changed state in the last 30 minutes?
+- Are any fabric links down right now?
+- Which interfaces reported errors recently?
+- Which links have the highest outbound traffic?
+- Is Prometheus successfully scraping gNMIc?
+- Did traffic appear on the alternate spine path?
+
+The MCP server only has Prometheus/Grafana telemetry context. It should not
+claim a final readiness `PASS` or `FAIL` unless that result is exported as a
+metric; use the Markdown/JSON readiness report for final experiment verdicts.
+
 ## Development commands
 
 ```bash
