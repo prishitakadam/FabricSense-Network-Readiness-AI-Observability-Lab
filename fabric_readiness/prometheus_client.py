@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import ssl
 from typing import Any
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -12,12 +13,17 @@ from urllib.request import Request, urlopen
 class PrometheusClient:
     """Read metrics from the Prometheus HTTP API."""
 
-    def __init__(self, base_url: str = "http://localhost:9090"):
+    def __init__(self, base_url: str = "http://localhost:9090", *, verify_tls: bool = True):
         self.base_url = base_url.rstrip("/")
+        self.verify_tls = verify_tls
 
     @classmethod
     def from_environment(cls) -> "PrometheusClient":
-        return cls(os.environ.get("PROMETHEUS_URL", "http://localhost:9090"))
+        skip_verify = os.environ.get("PROMETHEUS_INSECURE_SKIP_VERIFY") == "1"
+        return cls(
+            os.environ.get("PROMETHEUS_URL", "http://localhost:9090"),
+            verify_tls=not skip_verify,
+        )
 
     def instant_query(self, query: str) -> list[dict[str, Any]]:
         payload = self._get("/api/v1/query", {"query": query})
@@ -34,7 +40,15 @@ class PrometheusClient:
 
     def _get(self, path: str, params: dict[str, str]) -> dict[str, Any]:
         request = Request(f"{self.base_url}{path}?{urlencode(params)}")
-        with urlopen(request, timeout=10) as response:
+        if self.verify_tls:
+            response = urlopen(request, timeout=10)
+        else:
+            response = urlopen(
+                request,
+                timeout=10,
+                context=ssl._create_unverified_context(),
+            )
+        with response:
             return json.load(response)
 
     def _results(self, payload: dict[str, Any]) -> list[dict[str, Any]]:

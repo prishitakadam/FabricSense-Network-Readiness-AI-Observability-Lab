@@ -1,6 +1,7 @@
 import io
 import json
 import os
+import ssl
 import unittest
 from unittest.mock import patch
 
@@ -50,6 +51,10 @@ class PrometheusClientTests(unittest.TestCase):
                 "http://prom.example:9090",
             )
 
+    def test_can_skip_tls_verification_for_codespaces_forwarded_prometheus(self):
+        with patch.dict(os.environ, {"PROMETHEUS_INSECURE_SKIP_VERIFY": "1"}):
+            self.assertFalse(PrometheusClient.from_environment().verify_tls)
+
     def test_instant_query_returns_prometheus_result_list(self):
         payload = {
             "status": "success",
@@ -65,6 +70,19 @@ class PrometheusClientTests(unittest.TestCase):
             result = PrometheusClient("http://prometheus:9090").instant_query("up")
 
         self.assertEqual(result, payload["data"]["result"])
+
+    def test_insecure_client_passes_unverified_ssl_context(self):
+        payload = {"status": "success", "data": {"result": []}}
+        captured = {}
+
+        def fake_urlopen(request, timeout, context=None):
+            captured["context"] = context
+            return io.BytesIO(json.dumps(payload).encode())
+
+        with patch("fabric_readiness.prometheus_client.urlopen", fake_urlopen):
+            PrometheusClient("https://prometheus.example", verify_tls=False).instant_query("up")
+
+        self.assertIsInstance(captured["context"], ssl.SSLContext)
 
 
 class FabricInvestigatorTests(unittest.TestCase):

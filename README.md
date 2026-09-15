@@ -156,6 +156,15 @@ Prometheus is forwarded elsewhere:
 PROMETHEUS_URL="https://<prometheus-forwarded-url>" python3 -m fabric_readiness.mcp_server
 ```
 
+If your local Python install does not trust the Codespaces forwarded
+certificate chain, use the development-only TLS bypass:
+
+```bash
+PROMETHEUS_URL="https://<prometheus-forwarded-url>" \
+PROMETHEUS_INSECURE_SKIP_VERIFY=1 \
+python3 -m fabric_readiness.mcp_server
+```
+
 The MCP server is intentionally read-only. It can query Prometheus, but it
 cannot run shell commands, disable links, repair links, or change SR Linux
 configuration.
