@@ -31,8 +31,10 @@ class LabConfigurationTests(unittest.TestCase):
 
         self.assertIn("all: deploy experiment", makefile)
         self.assertIn("experiment:\n\tpython3 -m fabric_readiness run $(ARGS)", makefile)
+        self.assertIn("setup:\n\tpython3 -m pip install -r requirements.txt", makefile)
         self.assertNotIn("experiment: deploy", makefile)
         self.assertIn("python3 -m fabric_readiness run", makefile)
+        self.assertIn("python3 -m compileall -q fabric_readiness mcp_servers", makefile)
 
 
 if __name__ == "__main__":

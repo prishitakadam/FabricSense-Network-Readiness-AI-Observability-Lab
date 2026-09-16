@@ -30,5 +30,6 @@
     }
   },
   "workspaceFolder": "${localWorkspaceFolder}",
-  "workspaceMount": "source=${localWorkspaceFolder},target=${localWorkspaceFolder},type=bind,consistency=cached"
+  "workspaceMount": "source=${localWorkspaceFolder},target=${localWorkspaceFolder},type=bind,consistency=cached",
+  "postCreateCommand": "python3 -m pip install -r requirements.txt"
 }

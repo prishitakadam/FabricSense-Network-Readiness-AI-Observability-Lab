@@ -1,9 +1,11 @@
-# Network Fabric Observability & Readiness Lab
+# FabricSense: Network Readiness & AI Observability Lab
 
-An automated resilience experiment for a virtual Nokia SR Linux leaf-spine
-fabric. One command deploys the network and observability stack, measures a
-healthy baseline, disables a leaf-spine link, measures degraded performance,
-restores the link, and produces an evidence-based readiness result.
+A virtual Nokia SR Linux Clos fabric lab for network resilience validation and
+AI-assisted observability. The project deploys a Containerlab leaf-spine fabric,
+streams switch telemetry into Prometheus and Grafana, runs controlled traffic
+and link-failure experiments, generates evidence-based readiness reports, and
+exposes read-only MCP tools so an AI assistant can investigate live fabric
+telemetry.
 
 ## Run the lab in GitHub Codespaces
 
@@ -46,13 +48,19 @@ Exit codes are `0` for PASS, `1` for FAIL, and `2` for INCONCLUSIVE.
 ## Architecture
 
 ```text
+Traffic path:
 client2 ─ leaf2 ─┬─ spine1 ─┬─ leaf1 ─ client1
                  └─ spine2 ─┘
 
-SR Linux ──gNMI──> gNMIc ──scrape──> Prometheus ──> Grafana
-     ^                                  |
-     | gNMI Set                         | HTTP queries
-     └──────── Python experiment runner ┘
+Telemetry and investigation path:
+SR Linux switches ──gNMI──> gNMIc ──scrape──> Prometheus ──> Grafana
+        ^                                      │
+        │ gNMI Set                             │ PromQL / HTTP
+        └──── Python readiness runner          └──── MCP server ──> AI assistant
+
+Evidence and analysis outputs:
+Python readiness runner ──> Markdown readiness report and JSON evidence bundle
+MCP-enabled assistant    ──> Natural-language investigation of live Prometheus telemetry
 ```
 
 The complete topology contains three leaves, two spines, and three Linux
@@ -136,6 +144,151 @@ After deployment, use the Codespaces **Ports** tab to open:
 The provisioned Grafana dashboard shows interface state and traffic rate across
 the fabric.
 
+## AI-assisted fabric investigation with MCP
+
+This repository includes a read-only MCP server that exposes Prometheus-backed
+fabric investigation tools to an AI agent such as Codex or Claude. The agent
+can answer natural-language questions by querying live telemetry, without
+requiring a manual report path, screenshot, or PromQL query.
+
+### MCP investigation example
+
+With the MCP server connected, an engineer can investigate a failure in plain
+English while an AI agent, such as Codex or Claude, turns each question into
+read-only Prometheus queries. For example:
+
+**Question: Is telemetry healthy right now?**
+
+**Codex / AI agent answer:** Yes. Prometheus is successfully scraping gNMIc:
+`up{job="gnmic"} = 1` for `gnmic:9273`. No telemetry targets are down.
+
+**Question: What happened in the last 10 minutes?**
+
+**Codex / AI agent answer:** A recent fault occurred. Telemetry stayed healthy,
+but one fabric link flapped:
+
+- `spine1:e1-1` changed state 2 times.
+- `leaf1:e1-49` changed state 2 times.
+
+The most likely failed link was `spine1:e1-1 <-> leaf1:e1-49`.
+
+**Question: What evidence shows the fault?**
+
+**Codex / AI agent answer:**
+
+- Both ends changed together: `up -> down` at `21:54:38`, then `down -> up`
+  at `21:54:53`.
+- The outage lasted about 15 seconds.
+- Error counters increased during the window, especially on `leaf1:e1-50`,
+  `leaf1:e1-49`, and `leaf1:e1-1`.
+
+**Question: Did traffic continue and route around the failure?**
+
+**Codex / AI agent answer:** Yes. Client-facing traffic on `leaf1:e1-1`
+continued and peaked around `40.6 Mbps`. Traffic on the failed path,
+`spine1:e1-1` and `leaf1:e1-49`, dropped near zero while alternate-path
+traffic rose on `spine2:e1-1` and `leaf1:e1-50`.
+
+**Question: Was recovery successful?**
+
+**Codex / AI agent answer:** Yes. Both failed-link endpoints returned to
+`oper_state=1`, telemetry stayed healthy, and traffic continued during and
+after the event.
+
+**Question: Which interfaces should be investigated first?**
+
+**Codex / AI agent answer:**
+
+1. `leaf1:e1-50` - largest error increase and likely failover path.
+2. `leaf1:e1-49` - failed link endpoint.
+3. `spine1:e1-1` - other failed link endpoint.
+4. `leaf1:e1-1` - client-facing interface with significant errors.
+5. `leaf2:e1-1`, `leaf2:e1-50`, `leaf2:e1-49` - secondary error increases.
+
+Start the MCP server from the repository root:
+
+```bash
+python3 -m pip install -r requirements.txt
+python3 -m mcp_servers.fabric_prometheus.server
+```
+
+By default it queries Prometheus at `http://localhost:9090`. Override that when
+Prometheus is forwarded elsewhere:
+
+```bash
+PROMETHEUS_URL="https://<prometheus-forwarded-url>" \
+python3 -m mcp_servers.fabric_prometheus.server
+```
+
+For Codespaces URLs that change often, keep the current URL in a local ignored
+file and point the MCP server at that file:
+
+```bash
+mkdir -p .local
+printf '%s\n' 'https://<prometheus-forwarded-url>' > .local/prometheus-url
+
+PROMETHEUS_URL_FILE="$PWD/.local/prometheus-url" \
+python3 -m mcp_servers.fabric_prometheus.server
+```
+
+If your local Python install does not trust the Codespaces forwarded
+certificate chain, use the development-only TLS bypass:
+
+```bash
+PROMETHEUS_URL="https://<prometheus-forwarded-url>" \
+PROMETHEUS_INSECURE_SKIP_VERIFY=1 \
+python3 -m mcp_servers.fabric_prometheus.server
+```
+
+To install this server in Codex, add an MCP entry to your local Codex config
+using the absolute path to this repository checkout:
+
+```toml
+[mcp_servers.srl_fabric_prometheus]
+command = "python3"
+args = [
+  "-m",
+  "mcp_servers.fabric_prometheus.server"
+]
+startup_timeout_sec = 10
+
+[mcp_servers.srl_fabric_prometheus.env]
+PYTHONPATH = "/absolute/path/to/Network-Fabric-Observability-Resilience-Testing"
+PROMETHEUS_URL_FILE = "/absolute/path/to/Network-Fabric-Observability-Resilience-Testing/.local/prometheus-url"
+PROMETHEUS_INSECURE_SKIP_VERIFY = "1"
+```
+
+Restart Codex after editing the config so the MCP server is loaded.
+When Codespaces gives you a new forwarded URL, update only `.local/prometheus-url`
+and restart Codex.
+
+The MCP server is intentionally read-only. It can query Prometheus, but it
+cannot run shell commands, disable links, repair links, or change SR Linux
+configuration.
+
+Supported investigation tools include:
+
+- `fabric_down_links`
+- `fabric_link_changes`
+- `fabric_interface_errors`
+- `fabric_top_traffic`
+- `fabric_telemetry_health`
+- `prometheus_instant_query`
+- `prometheus_range_query`
+
+Good questions for the assistant:
+
+- Which interfaces changed state in the last 30 minutes?
+- Are any fabric links down right now?
+- Which interfaces reported errors recently?
+- Which links have the highest outbound traffic?
+- Is Prometheus successfully scraping gNMIc?
+- Did traffic appear on the alternate spine path?
+
+The MCP server only has Prometheus/Grafana telemetry context. It should not
+claim a final readiness `PASS` or `FAIL` unless that result is exported as a
+metric; use the Markdown/JSON readiness report for final experiment verdicts.
+
 ## Development commands
 
 ```bash
@@ -143,6 +296,7 @@ make deploy      # deploy or recreate the lab
 make experiment  # run the readiness experiment against an existing lab
 make experiment ARGS="--maximum-error-delta 2000"
 make all         # deploy the lab, then run the readiness experiment
+make setup       # install Python dependencies for MCP support
 make test        # run tests without deploying the lab
 make destroy     # remove all lab containers and generated lab files
 ```
@@ -152,6 +306,7 @@ make destroy     # remove all lab containers and generated lab files
 ```text
 configs/             SR Linux, gNMIc, Prometheus, and Grafana configuration
 fabric_readiness/    experiment runner, evaluation, and report generation
+mcp_servers/         read-only MCP server for Prometheus-backed AI investigation
 tests/               fast unit and static configuration tests
 st.clab.yml          Containerlab topology
 readiness.toml        scenario values and explicit readiness thresholds
