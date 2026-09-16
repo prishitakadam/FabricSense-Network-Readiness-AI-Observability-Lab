@@ -147,9 +147,63 @@ the fabric.
 ## AI-assisted fabric investigation with MCP
 
 This repository includes a read-only MCP server that exposes Prometheus-backed
-fabric investigation tools to an AI assistant. The assistant can answer
-natural-language questions by querying live telemetry, without requiring a
-manual report path, screenshot, or PromQL query.
+fabric investigation tools to an AI agent such as Codex or Claude. The agent
+can answer natural-language questions by querying live telemetry, without
+requiring a manual report path, screenshot, or PromQL query.
+
+### MCP investigation example
+
+With the MCP server connected, an engineer can investigate a failure in plain
+English while an AI agent, such as Codex or Claude, turns each question into
+read-only Prometheus queries. For example:
+
+**Question: Is telemetry healthy right now?**
+
+**Codex / AI agent answer:** Yes. Prometheus is successfully scraping gNMIc:
+`up{job="gnmic"} = 1` for `gnmic:9273`. No telemetry targets are down.
+
+**Question: What happened in the last 10 minutes?**
+
+**Codex / AI agent answer:** A recent fault occurred. Telemetry stayed healthy,
+but one fabric link flapped:
+
+- `spine1:e1-1` changed state 2 times.
+- `leaf1:e1-49` changed state 2 times.
+
+The most likely failed link was `spine1:e1-1 <-> leaf1:e1-49`.
+
+**Question: What evidence shows the fault?**
+
+**Codex / AI agent answer:**
+
+- Both ends changed together: `up -> down` at `21:54:38`, then `down -> up`
+  at `21:54:53`.
+- The outage lasted about 15 seconds.
+- Error counters increased during the window, especially on `leaf1:e1-50`,
+  `leaf1:e1-49`, and `leaf1:e1-1`.
+
+**Question: Did traffic continue and route around the failure?**
+
+**Codex / AI agent answer:** Yes. Client-facing traffic on `leaf1:e1-1`
+continued and peaked around `40.6 Mbps`. Traffic on the failed path,
+`spine1:e1-1` and `leaf1:e1-49`, dropped near zero while alternate-path
+traffic rose on `spine2:e1-1` and `leaf1:e1-50`.
+
+**Question: Was recovery successful?**
+
+**Codex / AI agent answer:** Yes. Both failed-link endpoints returned to
+`oper_state=1`, telemetry stayed healthy, and traffic continued during and
+after the event.
+
+**Question: Which interfaces should be investigated first?**
+
+**Codex / AI agent answer:**
+
+1. `leaf1:e1-50` - largest error increase and likely failover path.
+2. `leaf1:e1-49` - failed link endpoint.
+3. `spine1:e1-1` - other failed link endpoint.
+4. `leaf1:e1-1` - client-facing interface with significant errors.
+5. `leaf2:e1-1`, `leaf2:e1-50`, `leaf2:e1-49` - secondary error increases.
 
 Start the MCP server from the repository root:
 
